@@ -744,8 +744,6 @@ function sendEmail() {
 
   var lines = ['営業ルート最適化', dateStr, ''];
   if (startPoint) lines.push('【出発地】' + startPoint.original, '');
-  lines.push('【最適訪問順】');
-
   routeWithGoal.forEach(function(p, idx) {
     var isStart = idx === 0 && startPoint;
     var isGoalEntry = goalPoint && idx === routeWithGoal.length - 1;
@@ -756,7 +754,7 @@ function sendEmail() {
     if (p.name || p.type) info += '\n      ' + [p.name, p.type].filter(Boolean).join(' | ');
     var nextP = idx < routeWithGoal.length - 1 ? routeWithGoal[idx + 1] : null;
     if (nextP) info += '\n      → 次まで ' + dist(p, nextP).toFixed(1) + ' km';
-    lines.push(info);
+    lines.push(info, '');
   });
 
   var visitCount = ordered.length - (startPoint ? 1 : 0);
