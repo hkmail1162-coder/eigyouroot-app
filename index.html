@@ -249,6 +249,7 @@ textarea:focus { border-color: #2563eb; }
 #qrImg { width: 220px; height: 220px; border: 1px solid #e5e7eb; border-radius: 8px; }
 #qrNote { font-size: 11px; color: #9ca3af; margin-top: 10px; margin-bottom: 0; }
 #qrMeta { font-size: 11px; color: #9ca3af; margin-top: 8px; line-height: 1.7; }
+.addr-info { font-size: 11px; color: #6b7280; margin-top: 3px; }
 .btn-qr-close {
   margin-top: 18px;
   background: #f3f4f6;
@@ -356,11 +357,13 @@ textarea:focus { border-color: #2563eb; }
         </div>
 
         <div class="section-label" style="margin-top:16px;">訪問先住所リスト</div>
-        <textarea id="addrInput" placeholder="例:
-東京都大田区大森北1-6-8
-東京都大田区池上1-1-1
-東京都大田区羽田1-3-5"></textarea>
-        <div class="hint">1行1件、都道府県から入力すると精度が上がります（最大30件）</div>
+        <textarea id="addrInput" placeholder="スプレッドシートからコピー貼り付け（名前・住所・種別）:
+辻典子	東京都大田区久が原六丁目19番1号	アパート
+橋本洋次郎	東京都大田区北馬込一丁目21番2号	戸建て
+
+住所のみでも可:
+東京都大田区池上1-1-1"></textarea>
+        <div class="hint">スプレッドシートからそのまま貼り付けOK（名前・住所・種別 の順）。住所のみも対応（最大30件）</div>
 
         <button class="btn-calc" id="calcBtn" onclick="calcRoute()">ルートを計算する</button>
         <div class="status" id="statusMsg"></div>
@@ -512,23 +515,31 @@ async function calcRoute() {
   var startAddrStr = document.getElementById('startAddr').value.trim();
   var goalSame = document.getElementById('goalSameAsStart').checked;
   var goalAddrStr = goalSame ? startAddrStr : document.getElementById('goalAddr').value.trim();
-  var lines = document.getElementById('addrInput').value
+  var rawLines = document.getElementById('addrInput').value
     .split('\n')
     .map(function(l) { return l.trim(); })
     .filter(function(l) { return l.length > 0; });
+  // タブ区切り（スプレッドシート貼り付け）対応: 名前・住所・種別 or 住所のみ
+  var lineInfos = rawLines.map(function(l) {
+    var parts = l.split('\t');
+    if (parts.length >= 2) {
+      return { addr: parts[1].trim(), name: parts[0].trim(), type: parts[2] ? parts[2].trim() : '' };
+    }
+    return { addr: l, name: '', type: '' };
+  });
 
-  if (lines.length === 0) {
+  if (lineInfos.length === 0) {
     setStatus('住所を1件以上入力してください', 'error');
     btn.disabled = false;
     return;
   }
-  if (lines.length > 30) {
+  if (lineInfos.length > 30) {
     setStatus('住所は30件以内にしてください', 'error');
     btn.disabled = false;
     return;
   }
 
-  var geocodeCount = lines.length + (startAddrStr ? 1 : 0) + (goalAddrStr && !goalSame ? 1 : 0);
+  var geocodeCount = lineInfos.length + (startAddrStr ? 1 : 0) + (goalAddrStr && !goalSame ? 1 : 0);
   setStatus('住所を検索中... (0/' + geocodeCount + ')');
 
   // 出発地のジオコーディング
@@ -561,15 +572,17 @@ async function calcRoute() {
 
   // 訪問先のジオコーディング
   var points = [];
-  for (var i = 0; i < lines.length; i++) {
-    setStatus('住所を検索中... (' + (i + 1) + '/' + lines.length + ')');
-    var p = await geocode(lines[i]);
+  for (var i = 0; i < lineInfos.length; i++) {
+    setStatus('住所を検索中... (' + (i + 1) + '/' + lineInfos.length + ')');
+    var p = await geocode(lineInfos[i].addr);
     if (!p) {
-      setStatus('住所が見つかりませんでした: ' + lines[i], 'error');
+      setStatus('住所が見つかりませんでした: ' + lineInfos[i].addr, 'error');
       btn.disabled = false;
       return;
     }
-    p.original = lines[i];
+    p.original = lineInfos[i].addr;
+    p.name = lineInfos[i].name;
+    p.type = lineInfos[i].type;
     points.push(p);
   }
 
@@ -591,7 +604,11 @@ function excludePoint(originalAddr) {
   // テキストエリアからも除去
   var ta = document.getElementById('addrInput');
   ta.value = ta.value.split('\n')
-    .filter(function(l) { return l.trim() !== originalAddr; })
+    .filter(function(l) {
+      var parts = l.split('\t');
+      var addr = parts.length >= 2 ? parts[1].trim() : l.trim();
+      return addr !== originalAddr;
+    })
     .join('\n');
   if (cachedPoints.length === 0) {
     clearMap();
@@ -668,6 +685,12 @@ function drawRoute() {
     var addrDiv = document.createElement('div');
     addrDiv.className = 'addr-text';
     addrDiv.textContent = p.original;
+    if (p.name || p.type) {
+      var infoDiv = document.createElement('div');
+      infoDiv.className = 'addr-info';
+      infoDiv.textContent = [p.name, p.type].filter(Boolean).join(' ｜ ');
+      addrDiv.appendChild(infoDiv);
+    }
     if (nextP) {
       var distDiv = document.createElement('div');
       distDiv.className = 'dist';
