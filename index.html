@@ -730,6 +730,11 @@ function showQR() {
   var goalAddr  = document.getElementById('goalAddr').value.trim();
   var lines = document.getElementById('addrInput').value
     .split('\n').filter(function(l) { return l.trim(); });
+  // タブ区切りの場合は住所部分（2列目）のみ抽出してQRに含める
+  var addrLines = lines.map(function(l) {
+    var parts = l.split('\t');
+    return parts.length >= 2 ? parts[1].trim() : l.trim();
+  });
 
   var qrData, noteText, titleText;
 
@@ -739,17 +744,17 @@ function showQR() {
     if (startAddr) params.set('s', startAddr);
     params.set('gs', goalSame ? '1' : '0');
     if (!goalSame && goalAddr) params.set('g', goalAddr);
-    if (lines.length) {
-      var b64 = btoa(unescape(encodeURIComponent(lines.join('|'))))
+    if (addrLines.length) {
+      var b64 = btoa(unescape(encodeURIComponent(addrLines.join('|'))))
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
       params.set('a', b64);
     }
     qrData = location.href.split('?')[0] + '?' + params.toString();
     titleText = 'スマホで開く';
-    noteText = 'スキャンで住所・設定が自動入力されます<br>訪問先 ' + lines.length + '件';
+    noteText = 'スキャンで住所・設定が自動入力されます<br>訪問先 ' + addrLines.length + '件';
   } else {
-    // file://直接開き: 住所リストをテキストQRに変換
-    qrData = lines.join('\n');
+    // file://直接開き: 住所のみのテキストQRに変換
+    qrData = addrLines.join('\n');
     titleText = '住所リストをスキャン';
     noteText = 'スキャン後にテキストをコピーして、スマホのアプリの住所欄に貼り付けてください';
   }
