@@ -248,6 +248,7 @@ textarea:focus { border-color: #2563eb; }
 #qrBox p { font-size: 12px; color: #6b7280; margin-bottom: 14px; line-height: 1.6; }
 #qrImg { width: 220px; height: 220px; border: 1px solid #e5e7eb; border-radius: 8px; }
 #qrNote { font-size: 11px; color: #9ca3af; margin-top: 10px; margin-bottom: 0; }
+#qrMeta { font-size: 11px; color: #9ca3af; margin-top: 8px; line-height: 1.7; }
 .btn-qr-close {
   margin-top: 18px;
   background: #f3f4f6;
@@ -332,6 +333,7 @@ textarea:focus { border-color: #2563eb; }
     <p id="qrDesc"></p>
     <img id="qrImg" src="" alt="QRコード">
     <div id="qrNote"></div>
+    <div id="qrMeta"></div>
     <button class="btn-qr-close" onclick="closeQR()">閉じる</button>
   </div>
 </div>
@@ -728,11 +730,19 @@ function showQR() {
     noteText = 'スキャン後にテキストをコピーして、スマホのアプリの住所欄に貼り付けてください';
   }
 
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var dateStr = now.getFullYear() + '/' + pad(now.getMonth()+1) + '/' + pad(now.getDate())
+    + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  var uid = 'QR-' + now.getFullYear() + pad(now.getMonth()+1) + pad(now.getDate())
+    + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+
   document.getElementById('qrTitle').textContent = titleText;
   var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=L&data='
     + encodeURIComponent(qrData);
   document.getElementById('qrImg').src = qrSrc;
   document.getElementById('qrNote').textContent = noteText;
+  document.getElementById('qrMeta').innerHTML = dateStr + '<br>' + uid;
   document.getElementById('qrModal').style.display = 'flex';
 }
 
