@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>営業ルート最適化ツール</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
+  background: #f0f2f5;
+  min-height: 100vh;
+}
+header {
+  background: #2563eb;
+  color: #fff;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+header h1 { font-size: 18px; font-weight: 700; }
+header span { font-size: 13px; opacity: 0.8; }
+.container {
+  display: flex;
+  height: calc(100vh - 50px);
+}
+.sidebar {
+  width: 340px;
+  min-width: 340px;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+textarea {
+  width: 100%;
+  height: 200px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  color: #111;
+  transition: border-color 0.15s;
+}
+textarea:focus { border-color: #2563eb; }
+.hint {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.start-row {
+  margin-top: 14px;
+}
+.start-row input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+  color: #111;
+  transition: border-color 0.15s;
+}
+.start-row input:focus { border-color: #2563eb; }
+.btn-calc {
+  width: 100%;
+  margin-top: 14px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-calc:hover { background: #1d4ed8; }
+.btn-calc:disabled { background: #93c5fd; cursor: not-allowed; }
+.status {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 10px;
+  min-height: 18px;
+  text-align: center;
+}
+.status.error { color: #dc2626; }
+.status.ok { color: #16a34a; }
+.divider {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 14px 0;
+}
+.route-list { list-style: none; }
+.route-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 13px;
+  color: #111;
+}
+.route-list li:last-child { border-bottom: none; }
+.btn-exclude {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #9ca3af;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.btn-exclude:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.badge {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.badge.start { background: #16a34a; }
+.addr-text { line-height: 1.5; }
+.addr-text .dist {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.goal-row { margin-top: 0; }
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+.goal-row input[type="text"] {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+  color: #111;
+  transition: border-color 0.15s;
+}
+.goal-row input[type="text"]:focus { border-color: #2563eb; }
+.badge.goal { background: #dc2626; }
+.total-row {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #166534;
+  font-weight: 600;
+  margin-top: 10px;
+}
+#map {
+  flex: 1;
+}
+@media (max-width: 640px) {
+  .container { flex-direction: column; }
+  .sidebar { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
+  #map { height: 50vh; }
+}
+.btn-pdf {
+  margin-left: auto;
+  background: #fff;
+  color: #2563eb;
+  border: 1.5px solid #fff;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-pdf:hover { background: #dbeafe; color: #1d4ed8; border-color: #dbeafe; }
+.btn-qr {
+  background: #fff;
+  color: #2563eb;
+  border: 1.5px solid #fff;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-qr:hover { background: #dbeafe; color: #1d4ed8; border-color: #dbeafe; }
+/* QRモーダル */
+#qrModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+#qrBox {
+  background: #fff;
+  border-radius: 14px;
+  padding: 28px 32px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  max-width: 320px;
+  width: 90%;
+}
+#qrBox h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: #111; }
+#qrBox p { font-size: 12px; color: #6b7280; margin-bottom: 14px; line-height: 1.6; }
+#qrImg { width: 220px; height: 220px; border: 1px solid #e5e7eb; border-radius: 8px; }
+#qrNote { font-size: 11px; color: #9ca3af; margin-top: 10px; margin-bottom: 0; }
+.btn-qr-close {
+  margin-top: 18px;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #374151;
+}
+.btn-qr-close:hover { background: #e5e7eb; }
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+  body { background: #fff; }
+  header { display: none; }
+  .btn-pdf { display: none !important; }
+  .print-hide { display: none !important; }
+
+  /* 2ページ構成: コンテナをブロックに変更 */
+  .container { display: block; height: auto; }
+
+  /* 1ページ目: 結果リストのみ */
+  .sidebar {
+    display: block;   /* flex を解除しないとページ分割が効かない */
+    width: 100%;
+    min-width: 0;
+    border: none;
+    overflow: visible;
+    break-after: page;
+    page-break-after: always;
+  }
+  .sidebar-inner {
+    display: block;
+    flex: none;
+    overflow: visible;
+    padding: 16px 20px;
+  }
+  #resultDivider { display: none !important; }
+  #resultArea { display: block !important; }
+  .section-label { margin-bottom: 10px; }
+  .total-row { margin-top: 14px; }
+
+  /* 2ページ目: 地図のみ */
+  #map {
+    display: block;
+    width: 100%;
+    break-before: page;
+    page-break-before: always;
+  }
+  /* タイルを確実に描画 */
+  .leaflet-container {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .leaflet-tile-container img {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  .leaflet-overlay-pane,
+  .leaflet-marker-pane,
+  .leaflet-shadow-pane {
+    display: block !important;
+  }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>営業ルート最適化</h1>
+  <span>住所を入力して最適ルートを自動計算</span>
+  <button class="btn-qr" id="qrBtn" onclick="showQR()">QRコード</button>
+  <button class="btn-pdf" id="pdfBtn" onclick="startPrint()">PDFに保存</button>
+</header>
+
+<!-- QRコードモーダル -->
+<div id="qrModal">
+  <div id="qrBox">
+    <h3 id="qrTitle">住所リストをスキャン</h3>
+    <p id="qrDesc"></p>
+    <img id="qrImg" src="" alt="QRコード">
+    <div id="qrNote"></div>
+    <button class="btn-qr-close" onclick="closeQR()">閉じる</button>
+  </div>
+</div>
+<div class="container">
+  <div class="sidebar">
+    <div class="sidebar-inner">
+      <div class="print-hide">
+        <div class="section-label">出発地</div>
+        <div class="start-row">
+          <input type="text" id="startAddr" placeholder="例: 東京都大田区蒲田5-13-26" value="東京都大田区南雪谷1-20-2">
+        </div>
+
+        <div class="section-label" style="margin-top:16px;">ゴール地点</div>
+        <div class="goal-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="goalSameAsStart" checked onchange="toggleGoalInput()">
+            <span>出発地に戻る</span>
+          </label>
+          <input type="text" id="goalAddr" placeholder="例: 東京都大田区蒲田5-13-26" style="display:none; margin-top:8px;">
+        </div>
+
+        <div class="section-label" style="margin-top:16px;">訪問先住所リスト</div>
+        <textarea id="addrInput" placeholder="例:
+東京都大田区大森北1-6-8
+東京都大田区池上1-1-1
+東京都大田区羽田1-3-5"></textarea>
+        <div class="hint">1行1件、都道府県から入力すると精度が上がります（最大30件）</div>
+
+        <button class="btn-calc" id="calcBtn" onclick="calcRoute()">ルートを計算する</button>
+        <div class="status" id="statusMsg"></div>
+      </div>
+
+      <hr class="divider" id="resultDivider" style="display:none">
+      <div id="resultArea" style="display:none">
+        <div class="section-label">最適訪問順</div>
+        <ul class="route-list" id="routeList"></ul>
+        <div class="total-row" id="totalRow"></div>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+function toggleGoalInput() {
+  var same = document.getElementById('goalSameAsStart').checked;
+  document.getElementById('goalAddr').style.display = same ? 'none' : 'block';
+}
+
+var map = L.map('map').setView([35.9037, 139.6233], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
+}).addTo(map);
+
+var markers = [];
+var polylines = [];
+
+// ジオコーディング結果キャッシュ
+var cachedStartPoint = null;
+var cachedGoalPoint = null;
+var cachedGoalSame = true;
+var cachedPoints = []; // 訪問先（除外済みを含まない）
+var lastBounds = null;
+
+function startPrint() {
+  if (lastBounds) map.fitBounds(lastBounds, { padding: [10, 10], animate: false });
+  // fitBounds の描画が完了してから印刷
+  setTimeout(function() { window.print(); }, 500);
+}
+
+function clearMap() {
+  markers.forEach(function(m) { map.removeLayer(m); });
+  polylines.forEach(function(p) { map.removeLayer(p); });
+  markers = [];
+  polylines = [];
+}
+
+function setStatus(msg, type) {
+  var el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status' + (type ? ' ' + type : '');
+}
+
+// 番地形式（一丁目11番13号）→ 数字ハイフン形式（1-11-13）に変換
+function normalizeAddress(addr) {
+  function kanjiToNum(s) {
+    if (/^\d+$/.test(s)) return parseInt(s);
+    var k = {'〇':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+    var n = 0;
+    var tmp = s.replace(/([一二三四五六七八九]?)十([一二三四五六七八九]?)/g, function(_, a, b) {
+      n += (a ? k[a] : 1) * 10 + (b ? k[b] : 0);
+      return '';
+    });
+    for (var i = 0; i < tmp.length; i++) {
+      if (k[tmp[i]] !== undefined) n += k[tmp[i]];
+    }
+    return n;
+  }
+  var p = '([一二三四五六七八九〇十]+|\\d+)';
+  return addr
+    .replace(new RegExp(p + '丁目', 'g'), function(_, n) { return kanjiToNum(n) + '-'; })
+    .replace(new RegExp(p + '番地', 'g'), function(_, n) { return kanjiToNum(n) + '-'; })
+    .replace(new RegExp(p + '番',   'g'), function(_, n) { return kanjiToNum(n) + '-'; })
+    .replace(new RegExp(p + '号',   'g'), function(_, n) { return kanjiToNum(n); })
+    .replace(/-$/, '');
+}
+
+// 国土地理院 住所検索API（日本住所専用・APIキー不要）
+async function geocode(address) {
+  var normalized = normalizeAddress(address);
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+  try {
+    var url = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(normalized);
+    var res = await fetch(url, { signal: controller.signal });
+    var data = await res.json();
+    clearTimeout(timeoutId);
+    if (!data.length) return null;
+    var coords = data[0].geometry.coordinates; // [lng, lat]
+    return { lat: coords[1], lng: coords[0], label: data[0].properties.title };
+  } catch (e) {
+    clearTimeout(timeoutId);
+    return null;
+  }
+}
+
+function dist(a, b) {
+  var R = 6371;
+  var dLat = (b.lat - a.lat) * Math.PI / 180;
+  var dLng = (b.lng - a.lng) * Math.PI / 180;
+  var x = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// 最近傍法（ゴール地点を考慮: 残り1件はゴールに最も近いものを優先）
+function nearestNeighbor(start, points, goal) {
+  var remaining = points.slice();
+  var route = [start];
+  var current = start;
+  while (remaining.length > 0) {
+    var minD = Infinity, minIdx = 0;
+    for (var i = 0; i < remaining.length; i++) {
+      var d = dist(current, remaining[i]);
+      // 残り1件になったらゴールへの距離も加算して最適な「締め方」を選ぶ
+      if (goal && remaining.length === 1) {
+        d = d + dist(remaining[i], goal);
+      }
+      if (d < minD) { minD = d; minIdx = i; }
+    }
+    route.push(remaining[minIdx]);
+    current = remaining[minIdx];
+    remaining.splice(minIdx, 1);
+  }
+  return route;
+}
+
+function totalDist(route, goal) {
+  var total = 0;
+  for (var i = 1; i < route.length; i++) {
+    total += dist(route[i-1], route[i]);
+  }
+  if (goal) total += dist(route[route.length - 1], goal);
+  return total;
+}
+
+async function calcRoute() {
+  var btn = document.getElementById('calcBtn');
+  btn.disabled = true;
+  clearMap();
+  document.getElementById('resultArea').style.display = 'none';
+  document.getElementById('resultDivider').style.display = 'none';
+
+  var startAddrStr = document.getElementById('startAddr').value.trim();
+  var goalSame = document.getElementById('goalSameAsStart').checked;
+  var goalAddrStr = goalSame ? startAddrStr : document.getElementById('goalAddr').value.trim();
+  var lines = document.getElementById('addrInput').value
+    .split('\n')
+    .map(function(l) { return l.trim(); })
+    .filter(function(l) { return l.length > 0; });
+
+  if (lines.length === 0) {
+    setStatus('住所を1件以上入力してください', 'error');
+    btn.disabled = false;
+    return;
+  }
+  if (lines.length > 30) {
+    setStatus('住所は30件以内にしてください', 'error');
+    btn.disabled = false;
+    return;
+  }
+
+  var geocodeCount = lines.length + (startAddrStr ? 1 : 0) + (goalAddrStr && !goalSame ? 1 : 0);
+  setStatus('住所を検索中... (0/' + geocodeCount + ')');
+
+  // 出発地のジオコーディング
+  var startPoint = null;
+  if (startAddrStr) {
+    startPoint = await geocode(startAddrStr);
+    if (!startPoint) {
+      setStatus('出発地の住所が見つかりませんでした: ' + startAddrStr, 'error');
+      btn.disabled = false;
+      return;
+    }
+    startPoint.original = startAddrStr;
+    startPoint.isStart = true;
+  }
+
+  // ゴール地点のジオコーディング（出発地と別の場合）
+  var goalPoint = null;
+  if (goalAddrStr && !goalSame) {
+    goalPoint = await geocode(goalAddrStr);
+    if (!goalPoint) {
+      setStatus('ゴール地点の住所が見つかりませんでした: ' + goalAddrStr, 'error');
+      btn.disabled = false;
+      return;
+    }
+    goalPoint.original = goalAddrStr;
+    goalPoint.isGoal = true;
+  } else if (goalSame && startPoint) {
+    goalPoint = Object.assign({}, startPoint, { isGoal: true, isStart: false });
+  }
+
+  // 訪問先のジオコーディング
+  var points = [];
+  for (var i = 0; i < lines.length; i++) {
+    setStatus('住所を検索中... (' + (i + 1) + '/' + lines.length + ')');
+    var p = await geocode(lines[i]);
+    if (!p) {
+      setStatus('住所が見つかりませんでした: ' + lines[i], 'error');
+      btn.disabled = false;
+      return;
+    }
+    p.original = lines[i];
+    points.push(p);
+  }
+
+  setStatus('ルートを計算中...');
+
+  // キャッシュに保存
+  cachedStartPoint = startPoint;
+  cachedGoalPoint = goalPoint;
+  cachedGoalSame = goalSame;
+  cachedPoints = points;
+
+  drawRoute();
+  setStatus('完了 — ' + points.length + '件のルートを最適化しました', 'ok');
+  btn.disabled = false;
+}
+
+function excludePoint(originalAddr) {
+  cachedPoints = cachedPoints.filter(function(p) { return p.original !== originalAddr; });
+  // テキストエリアからも除去
+  var ta = document.getElementById('addrInput');
+  ta.value = ta.value.split('\n')
+    .filter(function(l) { return l.trim() !== originalAddr; })
+    .join('\n');
+  if (cachedPoints.length === 0) {
+    clearMap();
+    document.getElementById('resultArea').style.display = 'none';
+    document.getElementById('resultDivider').style.display = 'none';
+    setStatus('訪問先がなくなりました', 'error');
+    return;
+  }
+  drawRoute();
+  setStatus('除外後に再計算しました（' + cachedPoints.length + '件）', 'ok');
+}
+
+function drawRoute() {
+  clearMap();
+  var startPoint = cachedStartPoint;
+  var goalPoint = cachedGoalPoint;
+  var points = cachedPoints;
+
+  var base = startPoint || points[0];
+  var targets = startPoint ? points : points.slice(1);
+  var ordered = nearestNeighbor(base, targets, goalPoint);
+  var total = totalDist(ordered, goalPoint);
+
+  var routeWithGoal = goalPoint ? ordered.concat([goalPoint]) : ordered;
+  var latlngs = routeWithGoal.map(function(p) { return [p.lat, p.lng]; });
+
+  var pl = L.polyline(latlngs, { color: '#2563eb', weight: 3, opacity: 0.7 }).addTo(map);
+  polylines.push(pl);
+  lastBounds = pl.getBounds();
+
+  ordered.forEach(function(p, idx) {
+    var isStart = idx === 0 && startPoint;
+    var color = isStart ? '#16a34a' : '#2563eb';
+    var label = isStart ? 'S' : String(idx + (startPoint ? 0 : 1));
+    var icon = L.divIcon({
+      html: '<div style="background:' + color + ';color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">' + label + '</div>',
+      iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+    });
+    var m = L.marker([p.lat, p.lng], { icon: icon })
+      .addTo(map)
+      .bindPopup('<b>' + (isStart ? '出発地' : '訪問先 ' + label) + '</b><br>' + p.original);
+    markers.push(m);
+  });
+
+  if (goalPoint && !cachedGoalSame) {
+    var gIcon = L.divIcon({
+      html: '<div style="background:#dc2626;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">G</div>',
+      iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+    });
+    var gm = L.marker([goalPoint.lat, goalPoint.lng], { icon: gIcon })
+      .addTo(map)
+      .bindPopup('<b>ゴール地点</b><br>' + goalPoint.original);
+    markers.push(gm);
+  }
+
+  map.fitBounds(pl.getBounds(), { padding: [30, 30] });
+
+  var list = document.getElementById('routeList');
+  list.innerHTML = '';
+  routeWithGoal.forEach(function(p, idx) {
+    var isStart = idx === 0 && startPoint;
+    var isGoalEntry = goalPoint && idx === routeWithGoal.length - 1;
+    var num = isStart ? 'S' : (isGoalEntry ? 'G' : String(idx + (startPoint ? 0 : 1)));
+    var badgeClass = isStart ? 'start' : (isGoalEntry ? 'goal' : '');
+    var nextP = idx < routeWithGoal.length - 1 ? routeWithGoal[idx + 1] : null;
+
+    var li = document.createElement('li');
+
+    var badge = document.createElement('div');
+    badge.className = 'badge' + (badgeClass ? ' ' + badgeClass : '');
+    badge.textContent = num;
+    li.appendChild(badge);
+
+    var addrDiv = document.createElement('div');
+    addrDiv.className = 'addr-text';
+    addrDiv.textContent = p.original;
+    if (nextP) {
+      var distDiv = document.createElement('div');
+      distDiv.className = 'dist';
+      distDiv.textContent = '次まで: ' + dist(p, nextP).toFixed(1) + ' km';
+      addrDiv.appendChild(distDiv);
+    }
+    li.appendChild(addrDiv);
+
+    if (!isStart && !isGoalEntry) {
+      var exBtn = document.createElement('button');
+      exBtn.className = 'btn-exclude';
+      exBtn.textContent = '除外';
+      exBtn.addEventListener('click', (function(addr) {
+        return function() { excludePoint(addr); };
+      })(p.original));
+      li.appendChild(exBtn);
+    }
+
+    list.appendChild(li);
+  });
+
+  var visitCount = ordered.length - (startPoint ? 1 : 0);
+  document.getElementById('totalRow').textContent =
+    '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件' +
+    (goalPoint ? '（帰路含む）' : '');
+
+  document.getElementById('resultArea').style.display = 'block';
+  document.getElementById('resultDivider').style.display = 'block';
+  document.getElementById('pdfBtn').style.display = 'block';
+  document.getElementById('qrBtn').style.display = 'block';
+}
+
+function showQR() {
+  var startAddr = document.getElementById('startAddr').value.trim();
+  var goalSame  = document.getElementById('goalSameAsStart').checked;
+  var goalAddr  = document.getElementById('goalAddr').value.trim();
+  var lines = document.getElementById('addrInput').value
+    .split('\n').filter(function(l) { return l.trim(); });
+
+  var qrData, noteText, titleText;
+
+  if (location.protocol !== 'file:') {
+    // HTTP経由: base64圧縮してURLに埋め込む
+    var params = new URLSearchParams();
+    if (startAddr) params.set('s', startAddr);
+    params.set('gs', goalSame ? '1' : '0');
+    if (!goalSame && goalAddr) params.set('g', goalAddr);
+    if (lines.length) {
+      var b64 = btoa(unescape(encodeURIComponent(lines.join('|'))))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      params.set('a', b64);
+    }
+    qrData = location.href.split('?')[0] + '?' + params.toString();
+    titleText = 'スマホで開く';
+    noteText = 'スキャンで住所・設定が自動入力されます（訪問先 ' + lines.length + '件）';
+  } else {
+    // file://直接開き: 住所リストをテキストQRに変換
+    qrData = lines.join('\n');
+    titleText = '住所リストをスキャン';
+    noteText = 'スキャン後にテキストをコピーして、スマホのアプリの住所欄に貼り付けてください';
+  }
+
+  document.getElementById('qrTitle').textContent = titleText;
+  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=L&data='
+    + encodeURIComponent(qrData);
+  document.getElementById('qrImg').src = qrSrc;
+  document.getElementById('qrNote').textContent = noteText;
+  document.getElementById('qrModal').style.display = 'flex';
+}
+
+function closeQR() {
+  document.getElementById('qrModal').style.display = 'none';
+}
+
+// URLパラメータから住所を復元（HTTP経由のとき）
+(function() {
+  if (location.protocol === 'file:') return;
+  var params = new URLSearchParams(location.search);
+  if (params.get('s')) document.getElementById('startAddr').value = params.get('s');
+  if (params.get('gs') === '0') {
+    document.getElementById('goalSameAsStart').checked = false;
+    toggleGoalInput();
+  }
+  if (params.get('g')) document.getElementById('goalAddr').value = params.get('g');
+  if (params.get('a')) {
+    try {
+      var b64 = params.get('a').replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var decoded = decodeURIComponent(escape(atob(b64)));
+      document.getElementById('addrInput').value = decoded.split('|').join('\n');
+    } catch (e) {
+      document.getElementById('addrInput').value = params.get('a').split('|').join('\n');
+    }
+  }
+  if (params.get('a') && params.get('s')) {
+    window.addEventListener('load', function() { calcRoute(); });
+  }
+})();
+</script>
+</body>
+</html>
