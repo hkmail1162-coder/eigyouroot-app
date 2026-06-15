@@ -526,7 +526,7 @@ async function calcRoute() {
   var lineInfos = rawLines.map(function(l) {
     var parts = l.split('\t');
     if (parts.length >= 2) {
-      return { addr: parts[1].trim(), name: parts[0].trim(), type: parts[2] ? parts[2].trim() : '' };
+      return { addr: parts[1].trim(), name: parts[0].trim(), vacId: parts[2] ? parts[2].trim() : '', type: parts[3] ? parts[3].trim() : '' };
     }
     return { addr: l, name: '', type: '' };
   });
@@ -585,6 +585,7 @@ async function calcRoute() {
     }
     p.original = lineInfos[i].addr;
     p.name = lineInfos[i].name;
+    p.vacId = lineInfos[i].vacId;
     p.type = lineInfos[i].type;
     points.push(p);
   }
@@ -652,7 +653,7 @@ function drawRoute() {
     });
     var m = L.marker([p.lat, p.lng], { icon: icon })
       .addTo(map)
-      .bindPopup('<b>' + (isStart ? '出発地' : '訪問先 ' + label) + '</b><br>' + p.original + ((!isStart && (p.name || p.type)) ? '<br><span style="font-size:12px;color:#555">' + [p.name, p.type].filter(Boolean).join(' ｜ ') + '</span>' : ''));
+      .bindPopup('<b>' + (isStart ? '出発地' : '訪問先 ' + label) + '</b><br>' + p.original + ((!isStart && (p.name || p.vacId || p.type)) ? '<br><span style="font-size:12px;color:#555">' + [p.name, p.vacId, p.type].filter(Boolean).join(' ｜ ') + '</span>' : ''));
     markers.push(m);
   });
 
@@ -688,10 +689,10 @@ function drawRoute() {
     var addrDiv = document.createElement('div');
     addrDiv.className = 'addr-text';
     addrDiv.textContent = p.original;
-    if (p.name || p.type) {
+    if (p.name || p.vacId || p.type) {
       var infoDiv = document.createElement('div');
       infoDiv.className = 'addr-info';
-      infoDiv.textContent = [p.name, p.type].filter(Boolean).join(' ｜ ');
+      infoDiv.textContent = [p.name, p.vacId, p.type].filter(Boolean).join(' ｜ ');
       addrDiv.appendChild(infoDiv);
     }
     if (nextP) {
@@ -751,7 +752,7 @@ function sendEmail() {
     var num = isGoalEntry ? 'ゴール' : String(idx + (startPoint ? 0 : 1));
     var label = isGoalEntry ? '【ゴール】' : '(' + num + ') ';
     var info = label + p.original;
-    if (p.name || p.type) info += '\n      ' + [p.name, p.type].filter(Boolean).join(' | ');
+    if (p.name || p.vacId || p.type) info += '\n      ' + [p.name, p.vacId, p.type].filter(Boolean).join(' | ');
     var nextP = idx < routeWithGoal.length - 1 ? routeWithGoal[idx + 1] : null;
     if (nextP) info += '\n      → 次まで ' + dist(p, nextP).toFixed(1) + ' km';
     lines.push(info, '');
