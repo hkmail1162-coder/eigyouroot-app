@@ -13,15 +13,14 @@ body {
   min-height: 100vh;
 }
 header {
-  background: #2563eb;
+  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
   color: #fff;
-  padding: 14px 20px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
-header h1 { font-size: 18px; font-weight: 700; }
-header span { font-size: 13px; opacity: 0.8; }
+header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.03em; }
 .container {
   display: flex;
   height: calc(100vh - 50px);
@@ -198,33 +197,21 @@ textarea:focus { border-color: #2563eb; }
   .sidebar { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
   #map { height: 50vh; }
 }
-.btn-pdf {
-  margin-left: auto;
-  background: #fff;
-  color: #2563eb;
-  border: 1.5px solid #fff;
-  border-radius: 7px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
+.btn-pdf, .btn-qr {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  padding: 7px;
+  width: 36px;
+  height: 36px;
   cursor: pointer;
   display: none;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s;
+  line-height: 0;
 }
-.btn-pdf:hover { background: #dbeafe; color: #1d4ed8; border-color: #dbeafe; }
-.btn-qr {
-  background: #fff;
-  color: #2563eb;
-  border: 1.5px solid #fff;
-  border-radius: 7px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: none;
-  transition: background 0.15s, color 0.15s;
-}
-.btn-qr:hover { background: #dbeafe; color: #1d4ed8; border-color: #dbeafe; }
+.btn-qr { margin-left: auto; }
+.btn-pdf:hover, .btn-qr:hover { background: rgba(255,255,255,0.28); }
 /* QRモーダル */
 #qrModal {
   display: none;
@@ -322,9 +309,19 @@ textarea:focus { border-color: #2563eb; }
 <body>
 <header>
   <h1>営業ルート最適化</h1>
-  <span>住所を入力して最適ルートを自動計算</span>
-  <button class="btn-qr" id="qrBtn" onclick="showQR()">QRコード</button>
-  <button class="btn-pdf" id="pdfBtn" onclick="startPrint()">PDFに保存</button>
+  <button class="btn-qr" id="qrBtn" onclick="showQR()" title="QRコード">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none"/>
+      <path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+  <button class="btn-pdf" id="pdfBtn" onclick="startPrint()" title="PDFに保存">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/><line x1="9" y1="9" x2="11" y2="9"/>
+    </svg>
+  </button>
 </header>
 
 <!-- QRコードモーダル -->
