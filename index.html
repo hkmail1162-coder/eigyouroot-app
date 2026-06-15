@@ -722,7 +722,7 @@ function showQR() {
     }
     qrData = location.href.split('?')[0] + '?' + params.toString();
     titleText = 'スマホで開く';
-    noteText = 'スキャンで住所・設定が自動入力されます（訪問先 ' + lines.length + '件）';
+    noteText = 'スキャンで住所・設定が自動入力されます<br>訪問先 ' + lines.length + '件';
   } else {
     // file://直接開き: 住所リストをテキストQRに変換
     qrData = lines.join('\n');
@@ -741,7 +741,7 @@ function showQR() {
   var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=L&data='
     + encodeURIComponent(qrData);
   document.getElementById('qrImg').src = qrSrc;
-  document.getElementById('qrNote').textContent = noteText;
+  document.getElementById('qrNote').innerHTML = noteText;
   document.getElementById('qrMeta').innerHTML = dateStr + '<br>' + uid;
   document.getElementById('qrModal').style.display = 'flex';
 }
