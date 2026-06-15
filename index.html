@@ -197,7 +197,7 @@ textarea:focus { border-color: #2563eb; }
   .sidebar { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
   #map { height: 50vh; }
 }
-.btn-pdf, .btn-qr {
+.btn-pdf, .btn-qr, .btn-mail {
   background: rgba(255,255,255,0.15);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.3);
@@ -211,7 +211,7 @@ textarea:focus { border-color: #2563eb; }
   line-height: 0;
 }
 .btn-qr { margin-left: auto; }
-.btn-pdf:hover, .btn-qr:hover { background: rgba(255,255,255,0.28); }
+.btn-pdf:hover, .btn-qr:hover, .btn-mail:hover { background: rgba(255,255,255,0.28); }
 /* QRモーダル */
 #qrModal {
   display: none;
@@ -314,6 +314,11 @@ textarea:focus { border-color: #2563eb; }
       <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
       <rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none"/>
       <path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+  <button class="btn-mail" id="mailBtn" onclick="sendEmail()" title="メールで送る">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
     </svg>
   </button>
   <button class="btn-pdf" id="pdfBtn" onclick="startPrint()" title="PDFに保存">
@@ -719,6 +724,48 @@ function drawRoute() {
   document.getElementById('resultDivider').style.display = 'block';
   document.getElementById('pdfBtn').style.display = 'block';
   document.getElementById('qrBtn').style.display = 'block';
+  document.getElementById('mailBtn').style.display = 'block';
+}
+
+function sendEmail() {
+  var startPoint = cachedStartPoint;
+  var goalPoint  = cachedGoalPoint;
+  var points     = cachedPoints;
+  if (!points || points.length === 0) return;
+
+  var base = startPoint || points[0];
+  var targets = startPoint ? points : points.slice(1);
+  var ordered = nearestNeighbor(base, targets, goalPoint);
+  var routeWithGoal = goalPoint ? ordered.concat([goalPoint]) : ordered;
+
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var dateStr = now.getFullYear() + '/' + pad(now.getMonth()+1) + '/' + pad(now.getDate());
+
+  var lines = ['営業ルート最適化', dateStr, ''];
+  if (startPoint) lines.push('【出発地】' + startPoint.original, '');
+  lines.push('【最適訪問順】');
+
+  routeWithGoal.forEach(function(p, idx) {
+    var isStart = idx === 0 && startPoint;
+    var isGoalEntry = goalPoint && idx === routeWithGoal.length - 1;
+    if (isStart) return;
+    var num = isGoalEntry ? 'ゴール' : String(idx + (startPoint ? 0 : 1));
+    var label = isGoalEntry ? '【ゴール】' : '(' + num + ') ';
+    var info = label + p.original;
+    if (p.name || p.type) info += '\n      ' + [p.name, p.type].filter(Boolean).join(' | ');
+    var nextP = idx < routeWithGoal.length - 1 ? routeWithGoal[idx + 1] : null;
+    if (nextP) info += '\n      → 次まで ' + dist(p, nextP).toFixed(1) + ' km';
+    lines.push(info);
+  });
+
+  var visitCount = ordered.length - (startPoint ? 1 : 0);
+  var total = totalDist(ordered, goalPoint);
+  lines.push('', '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件');
+
+  var subject = encodeURIComponent(dateStr + ' 営業ルート');
+  var body = encodeURIComponent(lines.join('\n'));
+  location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
 function showQR() {
