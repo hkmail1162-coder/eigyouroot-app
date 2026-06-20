@@ -228,12 +228,12 @@ textarea:focus { border-color: #2563eb; }
   padding: 28px 32px;
   text-align: center;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-  max-width: 460px;
+  max-width: 860px;
   width: 90%;
 }
 #qrBox h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: #111; }
 #qrBox p { font-size: 12px; color: #6b7280; margin-bottom: 14px; line-height: 1.6; }
-#qrImg { width: 380px; height: 380px; border: 1px solid #e5e7eb; border-radius: 8px; max-width: 100%; }
+#qrImg { width: 100%; max-width: 700px; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
 #qrNote { font-size: 11px; color: #9ca3af; margin-top: 10px; margin-bottom: 0; }
 #qrMeta { font-size: 11px; color: #9ca3af; margin-top: 8px; line-height: 1.7; }
 .addr-info { font-size: 11px; color: #6b7280; margin-top: 3px; }
@@ -808,7 +808,13 @@ function showQR() {
     + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
 
   document.getElementById('qrTitle').textContent = titleText;
-  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&ecc=L&data='
+  // データ量が増えるほどQRのモジュール数が増えて密になるため、解像度を上げて読み取りやすくする
+  var qrSize = 400;
+  if (qrData.length > 280)  qrSize = 500;
+  if (qrData.length > 560)  qrSize = 600;
+  if (qrData.length > 900)  qrSize = 700;
+  if (qrData.length > 1300) qrSize = 800;
+  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=' + qrSize + 'x' + qrSize + '&ecc=L&data='
     + encodeURIComponent(qrData);
   document.getElementById('qrImg').src = qrSrc;
   document.getElementById('qrNote').innerHTML = noteText;
