@@ -151,6 +151,8 @@ textarea:focus { border-color: #2563eb; }
 }
 .badge.start { background: #16a34a; }
 .addr-text { line-height: 1.5; }
+.addr-link { color: #2563eb; text-decoration: underline; }
+.addr-link:active { color: #1d4ed8; }
 .addr-text .dist {
   font-size: 11px;
   color: #9ca3af;
@@ -686,7 +688,13 @@ function drawRoute() {
 
     var addrDiv = document.createElement('div');
     addrDiv.className = 'addr-text';
-    addrDiv.textContent = p.original;
+    var addrLink = document.createElement('a');
+    addrLink.className = 'addr-link';
+    addrLink.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.lat + ',' + p.lng);
+    addrLink.target = '_blank';
+    addrLink.rel = 'noopener';
+    addrLink.textContent = p.original;
+    addrDiv.appendChild(addrLink);
     if (p.name || p.vacId || p.type) {
       var infoDiv = document.createElement('div');
       infoDiv.className = 'addr-info';
