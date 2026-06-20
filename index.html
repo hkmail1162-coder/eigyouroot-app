@@ -194,8 +194,8 @@ textarea:focus { border-color: #2563eb; }
 }
 @media (max-width: 640px) {
   .container { flex-direction: column; }
-  .sidebar { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
-  #map { height: 50vh; }
+  .sidebar { width: 100%; min-width: 0; height: 240px; flex-shrink: 0; border-right: none; border-bottom: 1px solid #e5e7eb; }
+  #map { flex: 1; min-height: 0; }
 }
 .btn-pdf, .btn-qr, .btn-mail {
   background: rgba(255,255,255,0.15);
