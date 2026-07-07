@@ -722,8 +722,8 @@ function totalsLines() {
   var stayTotal = stayPer * lastTotals.visitCount;
   return [
     distLine + ' / 訪問 ' + lastTotals.visitCount + '件' + (lastTotals.hasGoal ? '（帰路含む）' : ''),
-    '概算所要時間: 約' + fmtDur(travelMin + stayTotal)
-      + '（移動 ' + fmtDur(travelMin) + ' + 滞在 ' + fmtDur(stayTotal) + '）'
+    '概算所要時間: 約' + fmtDur(travelMin + stayTotal),
+    '（移動 ' + fmtDur(travelMin) + ' + 滞在 ' + fmtDur(stayTotal) + '）'
   ];
 }
 
