@@ -380,7 +380,7 @@ textarea:focus { border-color: #2563eb; }
       <div class="print-hide">
         <div class="section-label">出発地</div>
         <div class="start-row">
-          <input type="text" id="startAddr" placeholder="例: 東京都大田区蒲田5-13-26" value="東京都大田区南雪谷1-20-2">
+          <input type="text" id="startAddr" placeholder="例: 東京都大田区蒲田5-13-26">
         </div>
 
         <div class="section-label" style="margin-top:16px;">ゴール地点</div>
@@ -429,6 +429,30 @@ textarea:focus { border-color: #2563eb; }
 function toggleGoalInput() {
   var same = document.getElementById('goalSameAsStart').checked;
   document.getElementById('goalAddr').style.display = same ? 'none' : 'block';
+}
+
+// 入力内容を localStorage に自動保存・復元
+var STORAGE_KEY = 'eigyouroot-inputs';
+function saveInputs() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      s: document.getElementById('startAddr').value,
+      gs: document.getElementById('goalSameAsStart').checked,
+      g: document.getElementById('goalAddr').value,
+      a: document.getElementById('addrInput').value
+    }));
+  } catch (e) {}
+}
+function loadInputs() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (!saved) return;
+    document.getElementById('startAddr').value = saved.s || '';
+    document.getElementById('goalSameAsStart').checked = saved.gs !== false;
+    document.getElementById('goalAddr').value = saved.g || '';
+    document.getElementById('addrInput').value = saved.a || '';
+    toggleGoalInput();
+  } catch (e) {}
 }
 
 var map = L.map('map').setView([35.9037, 139.6233], 11);
@@ -751,6 +775,7 @@ function excludePoint(originalAddr) {
   if (removedPoint) {
     excludedEntries.push({ point: removedPoint, line: removedLine !== null ? removedLine : originalAddr });
   }
+  saveInputs();
   renderExcluded();
   if (cachedPoints.length === 0) {
     clearMap();
@@ -770,6 +795,7 @@ function restorePoint(idx) {
   // テキストエリアにも戻す
   var ta = document.getElementById('addrInput');
   ta.value = (ta.value.trim() ? ta.value + '\n' : '') + entry.line;
+  saveInputs();
   renderExcluded();
   drawRoute();
   setStatus('「' + entry.point.original + '」を戻して再計算しました（' + cachedPoints.length + '件）', 'ok');
@@ -1002,9 +1028,38 @@ function sendEmail() {
   var total = totalDist(ordered, goalPoint);
   lines.push('', '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件');
 
+  var bodyText = lines.join('\n');
   var subject = encodeURIComponent(dateStr + ' 営業ルート');
-  var body = encodeURIComponent(lines.join('\n'));
-  location.href = 'mailto:?subject=' + subject + '&body=' + body;
+  var url = 'mailto:?subject=' + subject + '&body=' + encodeURIComponent(bodyText);
+  // mailto URLが長すぎるとメーラーが開けないことがあるため、クリップボード経由に切り替える
+  if (url.length > 1800) {
+    copyText(bodyText).then(function() {
+      alert('件数が多く本文をURLで渡せないため、ルートをクリップボードにコピーしました。\n開いたメールの本文に貼り付けてください。');
+      openMailto('mailto:?subject=' + subject);
+    });
+    return;
+  }
+  openMailto(url);
+}
+
+function openMailto(url) {
+  location.href = url;
+}
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  // 非HTTPS環境用フォールバック
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  return Promise.resolve();
 }
 
 // QRコードをブラウザ内で生成（住所データを外部サービスに送らない）
@@ -1075,29 +1130,46 @@ function closeQR() {
   document.getElementById('qrModal').style.display = 'none';
 }
 
-// URLパラメータから住所を復元（HTTP経由のとき）
+// 入力の復元と自動保存の設定
 (function() {
-  if (location.protocol === 'file:') return;
-  var params = new URLSearchParams(location.search);
-  if (params.get('s')) document.getElementById('startAddr').value = params.get('s');
-  if (params.get('gs') === '0') {
-    document.getElementById('goalSameAsStart').checked = false;
-    toggleGoalInput();
-  }
-  if (params.get('g')) document.getElementById('goalAddr').value = params.get('g');
-  if (params.get('a')) {
-    try {
-      var b64 = params.get('a').replace(/-/g, '+').replace(/_/g, '/');
-      while (b64.length % 4) b64 += '=';
-      var decoded = decodeURIComponent(escape(atob(b64)));
-      document.getElementById('addrInput').value = decoded.split('|').join('\n');
-    } catch (e) {
-      document.getElementById('addrInput').value = params.get('a').split('|').join('\n');
+  // 前回の入力を localStorage から復元
+  loadInputs();
+
+  // URLパラメータがあればそちらを優先（QRコード経由）
+  if (location.protocol !== 'file:') {
+    var params = new URLSearchParams(location.search);
+    if (params.get('s')) document.getElementById('startAddr').value = params.get('s');
+    if (params.get('gs') === '0') {
+      document.getElementById('goalSameAsStart').checked = false;
+      toggleGoalInput();
+    } else if (params.get('gs') === '1') {
+      document.getElementById('goalSameAsStart').checked = true;
+      toggleGoalInput();
+    }
+    if (params.get('g')) document.getElementById('goalAddr').value = params.get('g');
+    if (params.get('a')) {
+      try {
+        var b64 = params.get('a').replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        var decoded = decodeURIComponent(escape(atob(b64)));
+        document.getElementById('addrInput').value = decoded.split('|').join('\n');
+      } catch (e) {
+        document.getElementById('addrInput').value = params.get('a').split('|').join('\n');
+      }
+    }
+    if (params.get('a') && params.get('s')) {
+      window.addEventListener('load', function() { calcRoute(); });
     }
   }
-  if (params.get('a') && params.get('s')) {
-    window.addEventListener('load', function() { calcRoute(); });
-  }
+
+  // 入力のたびに自動保存
+  ['startAddr', 'goalAddr', 'addrInput'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', saveInputs);
+  });
+  document.getElementById('goalSameAsStart').addEventListener('change', saveInputs);
+
+  // QRパラメータで復元した内容も保存しておく
+  saveInputs();
 })();
 </script>
 </body>
