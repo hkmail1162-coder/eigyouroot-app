@@ -105,6 +105,17 @@ textarea:focus { border-color: #2563eb; }
 }
 .status.error { color: #dc2626; }
 .status.ok { color: #16a34a; }
+.failed-box {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #b91c1c;
+  margin-top: 8px;
+  line-height: 1.7;
+}
+.failed-box .failed-title { font-weight: 600; }
 .divider {
   border: none;
   border-top: 1px solid #e5e7eb;
@@ -370,6 +381,7 @@ textarea:focus { border-color: #2563eb; }
 
         <button class="btn-calc" id="calcBtn" onclick="calcRoute()">ルートを計算する</button>
         <div class="status" id="statusMsg"></div>
+        <div class="failed-box" id="failedBox" style="display:none"></div>
       </div>
 
       <hr class="divider" id="resultDivider" style="display:none">
@@ -477,6 +489,24 @@ function dist(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
 }
 
+// 複数住所を並列ジオコーディング（同時5件まで）。失敗は null のまま返す
+async function geocodeAll(lineInfos, onProgress) {
+  var results = new Array(lineInfos.length);
+  var nextIdx = 0;
+  async function worker() {
+    while (nextIdx < lineInfos.length) {
+      var i = nextIdx++;
+      results[i] = await geocode(lineInfos[i].addr);
+      onProgress();
+    }
+  }
+  var workers = [];
+  var n = Math.min(5, lineInfos.length);
+  for (var w = 0; w < n; w++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
+}
+
 // 最近傍法（ゴール地点を考慮: 残り1件はゴールに最も近いものを優先）
 function nearestNeighbor(start, points, goal) {
   var remaining = points.slice();
@@ -499,6 +529,36 @@ function nearestNeighbor(start, points, goal) {
   return route;
 }
 
+// 2-opt改善: 経路の交差する区間を反転して総距離を短縮する
+// route[0]（出発地）は固定。goal があれば末尾→ゴールの距離も考慮する
+function twoOpt(route, goal) {
+  var n = route.length;
+  var improved = true;
+  var guard = 0;
+  while (improved && guard < 100) {
+    improved = false;
+    guard++;
+    for (var i = 1; i < n - 1; i++) {
+      for (var j = i + 1; j < n; j++) {
+        var after = (j + 1 < n) ? route[j + 1] : goal;
+        var costBefore = dist(route[i - 1], route[i]) + (after ? dist(route[j], after) : 0);
+        var costAfter  = dist(route[i - 1], route[j]) + (after ? dist(route[i], after) : 0);
+        if (costAfter < costBefore - 1e-9) {
+          var seg = route.slice(i, j + 1).reverse();
+          for (var k = 0; k < seg.length; k++) route[i + k] = seg[k];
+          improved = true;
+        }
+      }
+    }
+  }
+  return route;
+}
+
+// 最近傍法で初期ルートを作り、2-optで改善する
+function computeRoute(base, targets, goal) {
+  return twoOpt(nearestNeighbor(base, targets, goal), goal);
+}
+
 function totalDist(route, goal) {
   var total = 0;
   for (var i = 1; i < route.length; i++) {
@@ -514,6 +574,7 @@ async function calcRoute() {
   clearMap();
   document.getElementById('resultArea').style.display = 'none';
   document.getElementById('resultDivider').style.display = 'none';
+  document.getElementById('failedBox').style.display = 'none';
 
   var startAddrStr = document.getElementById('startAddr').value.trim();
   var goalSame = document.getElementById('goalSameAsStart').checked;
@@ -543,6 +604,11 @@ async function calcRoute() {
   }
 
   var geocodeCount = lineInfos.length + (startAddrStr ? 1 : 0) + (goalAddrStr && !goalSame ? 1 : 0);
+  var doneCount = 0;
+  function progress() {
+    doneCount++;
+    setStatus('住所を検索中... (' + doneCount + '/' + geocodeCount + ')');
+  }
   setStatus('住所を検索中... (0/' + geocodeCount + ')');
 
   // 出発地のジオコーディング
@@ -556,6 +622,7 @@ async function calcRoute() {
     }
     startPoint.original = startAddrStr;
     startPoint.isStart = true;
+    progress();
   }
 
   // ゴール地点のジオコーディング（出発地と別の場合）
@@ -569,25 +636,47 @@ async function calcRoute() {
     }
     goalPoint.original = goalAddrStr;
     goalPoint.isGoal = true;
+    progress();
   } else if (goalSame && startPoint) {
     goalPoint = Object.assign({}, startPoint, { isGoal: true, isStart: false });
   }
 
-  // 訪問先のジオコーディング
+  // 訪問先のジオコーディング（並列・失敗はスキップして続行）
+  var results = await geocodeAll(lineInfos, progress);
   var points = [];
+  var failedAddrs = [];
   for (var i = 0; i < lineInfos.length; i++) {
-    setStatus('住所を検索中... (' + (i + 1) + '/' + lineInfos.length + ')');
-    var p = await geocode(lineInfos[i].addr);
+    var p = results[i];
     if (!p) {
-      setStatus('住所が見つかりませんでした: ' + lineInfos[i].addr, 'error');
-      btn.disabled = false;
-      return;
+      failedAddrs.push(lineInfos[i].addr);
+      continue;
     }
     p.original = lineInfos[i].addr;
     p.name = lineInfos[i].name;
     p.vacId = lineInfos[i].vacId;
     p.type = lineInfos[i].type;
     points.push(p);
+  }
+
+  if (points.length === 0) {
+    setStatus('住所が1件も見つかりませんでした', 'error');
+    btn.disabled = false;
+    return;
+  }
+
+  if (failedAddrs.length > 0) {
+    var box = document.getElementById('failedBox');
+    box.innerHTML = '';
+    var title = document.createElement('div');
+    title.className = 'failed-title';
+    title.textContent = '見つからなかった住所（' + failedAddrs.length + '件・除外して計算）:';
+    box.appendChild(title);
+    failedAddrs.forEach(function(a) {
+      var d = document.createElement('div');
+      d.textContent = '・' + a;
+      box.appendChild(d);
+    });
+    box.style.display = 'block';
   }
 
   setStatus('ルートを計算中...');
@@ -599,7 +688,8 @@ async function calcRoute() {
   cachedPoints = points;
 
   drawRoute();
-  setStatus('完了 — ' + points.length + '件のルートを最適化しました', 'ok');
+  setStatus('完了 — ' + points.length + '件のルートを最適化しました'
+    + (failedAddrs.length > 0 ? '（' + failedAddrs.length + '件は住所が見つからず除外）' : ''), 'ok');
   btn.disabled = false;
 }
 
@@ -633,7 +723,7 @@ function drawRoute() {
 
   var base = startPoint || points[0];
   var targets = startPoint ? points : points.slice(1);
-  var ordered = nearestNeighbor(base, targets, goalPoint);
+  var ordered = computeRoute(base, targets, goalPoint);
   var total = totalDist(ordered, goalPoint);
 
   var routeWithGoal = goalPoint ? ordered.concat([goalPoint]) : ordered;
@@ -742,7 +832,7 @@ function sendEmail() {
 
   var base = startPoint || points[0];
   var targets = startPoint ? points : points.slice(1);
-  var ordered = nearestNeighbor(base, targets, goalPoint);
+  var ordered = computeRoute(base, targets, goalPoint);
   var routeWithGoal = goalPoint ? ordered.concat([goalPoint]) : ordered;
 
   var now = new Date();
