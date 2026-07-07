@@ -212,6 +212,37 @@ textarea:focus { border-color: #2563eb; }
   transition: border-color 0.15s;
 }
 .goal-row input[type="text"]:focus { border-color: #2563eb; }
+.mode-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mode-row select {
+  flex: 1;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  color: #111;
+  background: #fff;
+  outline: none;
+}
+.stay-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stay-wrap input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  color: #111;
+  outline: none;
+}
+.stay-wrap span { font-size: 12px; color: #6b7280; white-space: nowrap; }
 .badge.goal { background: #dc2626; }
 .total-row {
   background: #f0fdf4;
@@ -392,6 +423,18 @@ textarea:focus { border-color: #2563eb; }
           <input type="text" id="goalAddr" placeholder="例: 東京都大田区蒲田5-13-26" style="display:none; margin-top:8px;">
         </div>
 
+        <div class="section-label" style="margin-top:16px;">移動手段・滞在時間</div>
+        <div class="mode-row">
+          <select id="travelMode" onchange="onModeChange()">
+            <option value="car">車</option>
+            <option value="walk">徒歩</option>
+          </select>
+          <div class="stay-wrap">
+            <input type="number" id="stayMin" min="0" max="180" value="10">
+            <span>分/件</span>
+          </div>
+        </div>
+
         <div class="section-label" style="margin-top:16px;">訪問先住所リスト</div>
         <textarea id="addrInput" placeholder="スプレッドシートからコピー貼り付け：
 名前 住所 空家ID 種別
@@ -439,7 +482,9 @@ function saveInputs() {
       s: document.getElementById('startAddr').value,
       gs: document.getElementById('goalSameAsStart').checked,
       g: document.getElementById('goalAddr').value,
-      a: document.getElementById('addrInput').value
+      a: document.getElementById('addrInput').value,
+      m: document.getElementById('travelMode').value,
+      st: document.getElementById('stayMin').value
     }));
   } catch (e) {}
 }
@@ -451,6 +496,8 @@ function loadInputs() {
     document.getElementById('goalSameAsStart').checked = saved.gs !== false;
     document.getElementById('goalAddr').value = saved.g || '';
     document.getElementById('addrInput').value = saved.a || '';
+    if (saved.m) document.getElementById('travelMode').value = saved.m;
+    if (saved.st !== undefined && saved.st !== '') document.getElementById('stayMin').value = saved.st;
     toggleGoalInput();
   } catch (e) {}
 }
@@ -622,6 +669,81 @@ function totalDist(route, goal) {
   return total;
 }
 
+function fmtDur(min) {
+  min = Math.round(min);
+  var h = Math.floor(min / 60);
+  var m = min % 60;
+  return h > 0 ? h + '時間' + (m > 0 ? m + '分' : '') : m + '分';
+}
+
+// 直線距離からの概算移動時間（分）。道路の迂回係数と平均速度で換算する
+// OSRMの実道路データが取れるまでのつなぎ・フォールバック用
+function estimateTravelMinutes(straightKm, mode) {
+  if (mode === 'walk') return straightKm * 1.2 / 4.8 * 60; // 徒歩4.8km/h・迂回1.2倍
+  return straightKm * 1.3 / 25 * 60; // 市街地の車25km/h・迂回1.3倍
+}
+
+// OSRMデモサーバーで実道路の距離・所要時間を取得（失敗時はnull）
+async function fetchRoadInfo(routePts) {
+  try {
+    var mode = document.getElementById('travelMode').value;
+    var base = mode === 'walk'
+      ? 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/'
+      : 'https://router.project-osrm.org/route/v1/driving/';
+    var coords = routePts.map(function(p) { return p.lng + ',' + p.lat; }).join(';');
+    var controller = new AbortController();
+    var t = setTimeout(function() { controller.abort(); }, 10000);
+    var res = await fetch(base + coords + '?overview=false', { signal: controller.signal });
+    var data = await res.json();
+    clearTimeout(t);
+    if (!data.routes || !data.routes.length) return null;
+    return { km: data.routes[0].distance / 1000, minutes: data.routes[0].duration / 60 };
+  } catch (e) {
+    return null;
+  }
+}
+
+var lastTotals = null; // { straightKm, visitCount, hasGoal, road }
+var roadReqId = 0;
+
+function totalsLines() {
+  if (!lastTotals) return [];
+  var mode = document.getElementById('travelMode').value;
+  var stayPer = parseInt(document.getElementById('stayMin').value, 10);
+  if (isNaN(stayPer) || stayPer < 0) stayPer = 0;
+  var travelMin, distLine;
+  if (lastTotals.road) {
+    travelMin = lastTotals.road.minutes;
+    distLine = '合計距離（道路）: ' + lastTotals.road.km.toFixed(1) + ' km';
+  } else {
+    travelMin = estimateTravelMinutes(lastTotals.straightKm, mode);
+    distLine = '合計距離（直線）: ' + lastTotals.straightKm.toFixed(1) + ' km';
+  }
+  var stayTotal = stayPer * lastTotals.visitCount;
+  return [
+    distLine + ' / 訪問 ' + lastTotals.visitCount + '件' + (lastTotals.hasGoal ? '（帰路含む）' : ''),
+    '概算所要時間: 約' + fmtDur(travelMin + stayTotal)
+      + '（移動 ' + fmtDur(travelMin) + ' + 滞在 ' + fmtDur(stayTotal) + '）'
+  ];
+}
+
+function renderTotals() {
+  var ls = totalsLines();
+  if (!ls.length) return;
+  var el = document.getElementById('totalRow');
+  el.innerHTML = '';
+  ls.forEach(function(t) {
+    var d = document.createElement('div');
+    d.textContent = t;
+    el.appendChild(d);
+  });
+}
+
+function onModeChange() {
+  saveInputs();
+  if (cachedPoints.length > 0) drawRoute();
+}
+
 async function calcRoute() {
   var btn = document.getElementById('calcBtn');
   btn.disabled = true;
@@ -779,6 +901,8 @@ function excludePoint(originalAddr) {
   renderExcluded();
   if (cachedPoints.length === 0) {
     clearMap();
+    lastTotals = null;
+    roadReqId++;
     document.getElementById('resultArea').style.display = 'none';
     document.getElementById('resultDivider').style.display = 'none';
     setStatus('訪問先がなくなりました', 'error');
@@ -935,9 +1059,16 @@ function drawRoute() {
   });
 
   var visitCount = ordered.length - (startPoint ? 1 : 0);
-  document.getElementById('totalRow').textContent =
-    '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件' +
-    (goalPoint ? '（帰路含む）' : '');
+  lastTotals = { straightKm: total, visitCount: visitCount, hasGoal: !!goalPoint, road: null };
+  renderTotals();
+  // 実道路の距離・所要時間を非同期で取得して差し替える
+  var reqId = ++roadReqId;
+  fetchRoadInfo(routeWithGoal).then(function(r) {
+    if (r && reqId === roadReqId && lastTotals) {
+      lastTotals.road = r;
+      renderTotals();
+    }
+  });
 
   renderNavButtons(routeWithGoal, startPoint, goalPoint);
 
@@ -951,10 +1082,11 @@ function drawRoute() {
 // Googleマップのナビリンクを生成（経由地は最大9件なので超える場合は区間分割）
 function gmapsDirUrl(seg) {
   var fmt = function(p) { return p.lat + ',' + p.lng; };
+  var mode = document.getElementById('travelMode').value === 'walk' ? 'walking' : 'driving';
   var url = 'https://www.google.com/maps/dir/?api=1'
     + '&origin=' + encodeURIComponent(fmt(seg[0]))
     + '&destination=' + encodeURIComponent(fmt(seg[seg.length - 1]))
-    + '&travelmode=driving';
+    + '&travelmode=' + mode;
   if (seg.length > 2) {
     url += '&waypoints=' + encodeURIComponent(seg.slice(1, -1).map(fmt).join('|'));
   }
@@ -1026,7 +1158,13 @@ function sendEmail() {
 
   var visitCount = ordered.length - (startPoint ? 1 : 0);
   var total = totalDist(ordered, goalPoint);
-  lines.push('', '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件');
+  var tl = totalsLines();
+  if (tl.length) {
+    lines.push('');
+    tl.forEach(function(t) { lines.push(t); });
+  } else {
+    lines.push('', '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件');
+  }
 
   var bodyText = lines.join('\n');
   var subject = encodeURIComponent(dateStr + ' 営業ルート');
@@ -1167,6 +1305,11 @@ function closeQR() {
     document.getElementById(id).addEventListener('input', saveInputs);
   });
   document.getElementById('goalSameAsStart').addEventListener('change', saveInputs);
+  // 滞在時間の変更は所要時間の表示に即反映
+  document.getElementById('stayMin').addEventListener('input', function() {
+    saveInputs();
+    renderTotals();
+  });
 
   // QRパラメータで復元した内容も保存しておく
   saveInputs();
