@@ -169,6 +169,27 @@ textarea:focus { border-color: #2563eb; }
   color: #9ca3af;
   margin-top: 2px;
 }
+.addr-match {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.btn-nav {
+  display: block;
+  text-align: center;
+  background: #16a34a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-top: 8px;
+  transition: background 0.15s;
+}
+.btn-nav:hover { background: #15803d; }
+.btn-restore:hover { background: #dcfce7; color: #16a34a; border-color: #86efac; }
+.excluded-addr { color: #9ca3af; }
 .goal-row { margin-top: 0; }
 .toggle-label {
   display: flex;
@@ -389,6 +410,12 @@ textarea:focus { border-color: #2563eb; }
         <div class="section-label">最適訪問順</div>
         <ul class="route-list" id="routeList"></ul>
         <div class="total-row" id="totalRow"></div>
+        <div id="navArea" class="print-hide"></div>
+      </div>
+      <div id="excludedArea" class="print-hide" style="display:none">
+        <hr class="divider">
+        <div class="section-label">除外した訪問先</div>
+        <ul class="route-list" id="excludedList"></ul>
       </div>
     </div>
   </div>
@@ -396,6 +423,8 @@ textarea:focus { border-color: #2563eb; }
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode_UTF8.js"></script>
 <script>
 function toggleGoalInput() {
   var same = document.getElementById('goalSameAsStart').checked;
@@ -415,6 +444,7 @@ var cachedStartPoint = null;
 var cachedGoalPoint = null;
 var cachedGoalSame = true;
 var cachedPoints = []; // 訪問先（除外済みを含まない）
+var excludedEntries = []; // 除外した訪問先 { point, line }（「戻す」用）
 var lastBounds = null;
 
 function startPrint() {
@@ -575,6 +605,8 @@ async function calcRoute() {
   document.getElementById('resultArea').style.display = 'none';
   document.getElementById('resultDivider').style.display = 'none';
   document.getElementById('failedBox').style.display = 'none';
+  excludedEntries = [];
+  renderExcluded();
 
   var startAddrStr = document.getElementById('startAddr').value.trim();
   var goalSame = document.getElementById('goalSameAsStart').checked;
@@ -694,16 +726,32 @@ async function calcRoute() {
 }
 
 function excludePoint(originalAddr) {
-  cachedPoints = cachedPoints.filter(function(p) { return p.original !== originalAddr; });
-  // テキストエリアからも除去
+  var removedPoint = null;
+  cachedPoints = cachedPoints.filter(function(p) {
+    if (p.original === originalAddr) {
+      if (!removedPoint) removedPoint = p;
+      return false;
+    }
+    return true;
+  });
+  // テキストエリアからも除去（元の行は「戻す」用に保持）
+  var removedLine = null;
   var ta = document.getElementById('addrInput');
   ta.value = ta.value.split('\n')
     .filter(function(l) {
       var parts = l.split('\t');
       var addr = parts.length >= 2 ? parts[1].trim() : l.trim();
-      return addr !== originalAddr;
+      if (addr === originalAddr) {
+        if (removedLine === null) removedLine = l;
+        return false;
+      }
+      return true;
     })
     .join('\n');
+  if (removedPoint) {
+    excludedEntries.push({ point: removedPoint, line: removedLine !== null ? removedLine : originalAddr });
+  }
+  renderExcluded();
   if (cachedPoints.length === 0) {
     clearMap();
     document.getElementById('resultArea').style.display = 'none';
@@ -713,6 +761,48 @@ function excludePoint(originalAddr) {
   }
   drawRoute();
   setStatus('除外後に再計算しました（' + cachedPoints.length + '件）', 'ok');
+}
+
+function restorePoint(idx) {
+  var entry = excludedEntries.splice(idx, 1)[0];
+  if (!entry) return;
+  cachedPoints.push(entry.point);
+  // テキストエリアにも戻す
+  var ta = document.getElementById('addrInput');
+  ta.value = (ta.value.trim() ? ta.value + '\n' : '') + entry.line;
+  renderExcluded();
+  drawRoute();
+  setStatus('「' + entry.point.original + '」を戻して再計算しました（' + cachedPoints.length + '件）', 'ok');
+}
+
+function renderExcluded() {
+  var area = document.getElementById('excludedArea');
+  var list = document.getElementById('excludedList');
+  list.innerHTML = '';
+  if (excludedEntries.length === 0) {
+    area.style.display = 'none';
+    return;
+  }
+  excludedEntries.forEach(function(entry, idx) {
+    var li = document.createElement('li');
+    var addrDiv = document.createElement('div');
+    addrDiv.className = 'addr-text excluded-addr';
+    addrDiv.textContent = entry.point.original;
+    if (entry.point.name || entry.point.vacId || entry.point.type) {
+      var infoDiv = document.createElement('div');
+      infoDiv.className = 'addr-info';
+      infoDiv.textContent = [entry.point.name, entry.point.vacId, entry.point.type].filter(Boolean).join(' ｜ ');
+      addrDiv.appendChild(infoDiv);
+    }
+    li.appendChild(addrDiv);
+    var btn = document.createElement('button');
+    btn.className = 'btn-exclude btn-restore';
+    btn.textContent = '戻す';
+    btn.addEventListener('click', function() { restorePoint(idx); });
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+  area.style.display = 'block';
 }
 
 function drawRoute() {
@@ -785,6 +875,12 @@ function drawRoute() {
     addrLink.rel = 'noopener';
     addrLink.textContent = p.original;
     addrDiv.appendChild(addrLink);
+    if (p.label) {
+      var matchDiv = document.createElement('div');
+      matchDiv.className = 'addr-match';
+      matchDiv.textContent = '照合: ' + p.label;
+      addrDiv.appendChild(matchDiv);
+    }
     if (p.name || p.vacId || p.type) {
       var infoDiv = document.createElement('div');
       infoDiv.className = 'addr-info';
@@ -817,11 +913,59 @@ function drawRoute() {
     '合計距離（直線）: ' + total.toFixed(1) + ' km / 訪問 ' + visitCount + '件' +
     (goalPoint ? '（帰路含む）' : '');
 
+  renderNavButtons(routeWithGoal, startPoint, goalPoint);
+
   document.getElementById('resultArea').style.display = 'block';
   document.getElementById('resultDivider').style.display = 'block';
   document.getElementById('pdfBtn').style.display = 'block';
   document.getElementById('qrBtn').style.display = 'block';
   document.getElementById('mailBtn').style.display = 'block';
+}
+
+// Googleマップのナビリンクを生成（経由地は最大9件なので超える場合は区間分割）
+function gmapsDirUrl(seg) {
+  var fmt = function(p) { return p.lat + ',' + p.lng; };
+  var url = 'https://www.google.com/maps/dir/?api=1'
+    + '&origin=' + encodeURIComponent(fmt(seg[0]))
+    + '&destination=' + encodeURIComponent(fmt(seg[seg.length - 1]))
+    + '&travelmode=driving';
+  if (seg.length > 2) {
+    url += '&waypoints=' + encodeURIComponent(seg.slice(1, -1).map(fmt).join('|'));
+  }
+  return url;
+}
+
+function renderNavButtons(routeWithGoal, startPoint, goalPoint) {
+  var navArea = document.getElementById('navArea');
+  navArea.innerHTML = '';
+  if (routeWithGoal.length < 2) return;
+
+  function ptLabel(idx) {
+    var isS = idx === 0 && startPoint;
+    var isG = goalPoint && idx === routeWithGoal.length - 1;
+    return isS ? 'S' : (isG ? 'G' : String(idx + (startPoint ? 0 : 1)));
+  }
+
+  // 1区間 = 出発 + 経由地9件 + 目的地（計11地点）。区間の終点が次区間の起点になる
+  var segs = [];
+  var i = 0;
+  while (i < routeWithGoal.length - 1) {
+    var end = Math.min(i + 10, routeWithGoal.length - 1);
+    segs.push({ from: i, to: end, pts: routeWithGoal.slice(i, end + 1) });
+    i = end;
+  }
+
+  segs.forEach(function(seg, sIdx) {
+    var a = document.createElement('a');
+    a.className = 'btn-nav';
+    a.href = gmapsDirUrl(seg.pts);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = segs.length === 1
+      ? 'Googleマップでナビ開始'
+      : 'ナビ 区間' + (sIdx + 1) + '（' + ptLabel(seg.from) + ' → ' + ptLabel(seg.to) + '）';
+    navArea.appendChild(a);
+  });
 }
 
 function sendEmail() {
@@ -863,17 +1007,25 @@ function sendEmail() {
   location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
+// QRコードをブラウザ内で生成（住所データを外部サービスに送らない）
+function makeQRDataURL(text) {
+  if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) {
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+  }
+  var qr = qrcode(0, 'L');
+  qr.addData(text, 'Byte');
+  qr.make();
+  // 画像がおよそ700pxになるようにセルサイズを決める（余白は4セル分）
+  var cellSize = Math.max(3, Math.round(700 / qr.getModuleCount()));
+  return qr.createDataURL(cellSize, cellSize * 4);
+}
+
 function showQR() {
   var startAddr = document.getElementById('startAddr').value.trim();
   var goalSame  = document.getElementById('goalSameAsStart').checked;
   var goalAddr  = document.getElementById('goalAddr').value.trim();
   var lines = document.getElementById('addrInput').value
     .split('\n').filter(function(l) { return l.trim(); });
-  // タブ区切りの場合は住所部分（2列目）のみ抽出してQRに含める
-  var addrLines = lines.map(function(l) {
-    var parts = l.split('\t');
-    return parts.length >= 2 ? parts[1].trim() : l.trim();
-  });
 
   var qrData, noteText, titleText;
 
@@ -906,16 +1058,15 @@ function showQR() {
     + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
 
   document.getElementById('qrTitle').textContent = titleText;
-  // データ量が増えるほどQRのモジュール数が増えて密になるため、解像度を上げて読み取りやすくする
-  var qrSize = 400;
-  if (qrData.length > 280)  qrSize = 500;
-  if (qrData.length > 560)  qrSize = 600;
-  if (qrData.length > 900)  qrSize = 700;
-  if (qrData.length > 1300) qrSize = 800;
-  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=' + qrSize + 'x' + qrSize + '&ecc=L&data='
-    + encodeURIComponent(qrData);
-  document.getElementById('qrImg').src = qrSrc;
-  document.getElementById('qrNote').innerHTML = noteText;
+  var img = document.getElementById('qrImg');
+  try {
+    img.src = makeQRDataURL(qrData);
+    img.style.display = '';
+    document.getElementById('qrNote').innerHTML = noteText;
+  } catch (e) {
+    img.style.display = 'none';
+    document.getElementById('qrNote').innerHTML = 'データ量が多すぎてQRコードを生成できませんでした。件数を減らしてください';
+  }
   document.getElementById('qrMeta').innerHTML = dateStr + '<br>' + uid;
   document.getElementById('qrModal').style.display = 'flex';
 }
