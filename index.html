@@ -178,6 +178,28 @@ textarea:focus { border-color: #2563eb; }
   color: #9ca3af;
   margin-top: 2px;
 }
+/* 訪問済みチェック */
+.visit-check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+.visit-spacer {
+  width: 22px;
+  flex-shrink: 0;
+}
+.route-list li.visited .addr-text { color: #9ca3af; }
+.route-list li.visited .addr-link { color: #9ca3af; text-decoration: line-through; }
+.route-list li.visited .badge { background: #9ca3af; }
+#visitedRow {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  margin-top: 8px;
+}
 .btn-nav {
   display: block;
   text-align: center;
@@ -266,7 +288,7 @@ textarea:focus { border-color: #2563eb; }
   .sidebar { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid #e5e7eb; }
   #map { height: 50vh; }
 }
-.btn-pdf, .btn-qr, .btn-mail {
+.btn-pdf, .btn-qr, .btn-mail, .btn-share {
   background: rgba(255,255,255,0.15);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.3);
@@ -280,7 +302,7 @@ textarea:focus { border-color: #2563eb; }
   line-height: 0;
 }
 .btn-qr { margin-left: auto; }
-.btn-pdf:hover, .btn-qr:hover, .btn-mail:hover { background: rgba(255,255,255,0.28); }
+.btn-pdf:hover, .btn-qr:hover, .btn-mail:hover, .btn-share:hover { background: rgba(255,255,255,0.28); }
 /* QRモーダル */
 #qrModal {
   display: none;
@@ -385,6 +407,11 @@ textarea:focus { border-color: #2563eb; }
       <path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" fill="currentColor" stroke="none"/>
     </svg>
   </button>
+  <button class="btn-share" id="shareBtn" onclick="shareRoute()" title="スマホに送る">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>
+  </button>
   <button class="btn-mail" id="mailBtn" onclick="sendEmail()" title="メールで送る">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
@@ -457,6 +484,7 @@ textarea:focus { border-color: #2563eb; }
         <div class="section-label">最適訪問順</div>
         <ul class="route-list" id="routeList"></ul>
         <div class="total-row" id="totalRow"></div>
+        <div class="total-row" id="visitedRow" style="display:none"></div>
         <div id="navArea" class="print-hide"></div>
       </div>
       <div id="excludedArea" class="print-hide" style="display:none">
@@ -506,6 +534,27 @@ function loadInputs() {
   } catch (e) {}
 }
 
+// 訪問済みチェックの状態を localStorage に保存（当日限り有効。翌日は自動リセット）
+var VISITED_KEY = 'eigyouroot-visited';
+function todayStr() {
+  var n = new Date();
+  var pad = function(x) { return String(x).padStart(2, '0'); };
+  return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate());
+}
+function loadVisited() {
+  try {
+    var d = JSON.parse(localStorage.getItem(VISITED_KEY));
+    if (d && d.date === todayStr()) return d.addrs || {};
+  } catch (e) {}
+  return {};
+}
+var visitedAddrs = loadVisited();
+function saveVisited() {
+  try {
+    localStorage.setItem(VISITED_KEY, JSON.stringify({ date: todayStr(), addrs: visitedAddrs }));
+  } catch (e) {}
+}
+
 var map = L.map('map').setView([35.9037, 139.6233], 11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
@@ -513,6 +562,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 var markers = [];
 var polylines = [];
+var markerByAddr = {}; // 訪問済みトグルでピンの色を変えるための参照
 
 // ジオコーディング結果キャッシュ
 var cachedStartPoint = null;
@@ -533,6 +583,7 @@ function clearMap() {
   polylines.forEach(function(p) { map.removeLayer(p); });
   markers = [];
   polylines = [];
+  markerByAddr = {};
 }
 
 function setStatus(msg, type) {
@@ -959,6 +1010,13 @@ function renderExcluded() {
   area.style.display = 'block';
 }
 
+function makeBadgeIcon(color, label) {
+  return L.divIcon({
+    html: '<div style="background:' + color + ';color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">' + label + '</div>',
+    iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+  });
+}
+
 function drawRoute() {
   clearMap();
   var startPoint = cachedStartPoint;
@@ -979,24 +1037,18 @@ function drawRoute() {
 
   ordered.forEach(function(p, idx) {
     var isStart = idx === 0 && startPoint;
-    var color = isStart ? '#16a34a' : '#2563eb';
+    var visited = !isStart && visitedAddrs[p.original];
+    var color = isStart ? '#16a34a' : (visited ? '#9ca3af' : '#2563eb');
     var label = isStart ? 'S' : String(idx + (startPoint ? 0 : 1));
-    var icon = L.divIcon({
-      html: '<div style="background:' + color + ';color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">' + label + '</div>',
-      iconSize: [28, 28], iconAnchor: [14, 14], className: ''
-    });
-    var m = L.marker([p.lat, p.lng], { icon: icon })
+    var m = L.marker([p.lat, p.lng], { icon: makeBadgeIcon(color, label) })
       .addTo(map)
       .bindPopup('<b>' + (isStart ? '出発地' : '訪問先 ' + label) + '</b><br>' + p.original + ((!isStart && (p.name || p.vacId || p.type)) ? '<br><span style="font-size:12px;color:#555">' + [p.name, p.vacId, p.type].filter(Boolean).join(' ｜ ') + '</span>' : ''));
     markers.push(m);
+    if (!isStart) markerByAddr[p.original] = { marker: m, label: label };
   });
 
   if (goalPoint && !cachedGoalSame) {
-    var gIcon = L.divIcon({
-      html: '<div style="background:#dc2626;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">G</div>',
-      iconSize: [28, 28], iconAnchor: [14, 14], className: ''
-    });
-    var gm = L.marker([goalPoint.lat, goalPoint.lng], { icon: gIcon })
+    var gm = L.marker([goalPoint.lat, goalPoint.lng], { icon: makeBadgeIcon('#dc2626', 'G') })
       .addTo(map)
       .bindPopup('<b>ゴール地点</b><br>' + goalPoint.original);
     markers.push(gm);
@@ -1014,6 +1066,24 @@ function drawRoute() {
     var nextP = idx < routeWithGoal.length - 1 ? routeWithGoal[idx + 1] : null;
 
     var li = document.createElement('li');
+
+    // 訪問先の行だけチェックボックスを付ける（S・Gは幅合わせのスペーサー）
+    if (!isStart && !isGoalEntry) {
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'visit-check';
+      chk.title = '訪問済み';
+      chk.checked = !!visitedAddrs[p.original];
+      if (chk.checked) li.classList.add('visited');
+      chk.addEventListener('change', (function(addr, liEl) {
+        return function() { setVisited(addr, liEl, this.checked); };
+      })(p.original, li));
+      li.appendChild(chk);
+    } else {
+      var spacer = document.createElement('span');
+      spacer.className = 'visit-spacer';
+      li.appendChild(spacer);
+    }
 
     var badge = document.createElement('div');
     badge.className = 'badge' + (badgeClass ? ' ' + badgeClass : '');
@@ -1075,12 +1145,37 @@ function drawRoute() {
   });
 
   renderNavButtons(routeWithGoal, startPoint, goalPoint);
+  renderVisitedProgress();
 
   document.getElementById('resultArea').style.display = 'block';
   document.getElementById('resultDivider').style.display = 'block';
   document.getElementById('pdfBtn').style.display = 'block';
   document.getElementById('qrBtn').style.display = 'block';
   document.getElementById('mailBtn').style.display = 'block';
+  document.getElementById('shareBtn').style.display = 'block';
+}
+
+// 訪問済みチェックの切り替え: リストの見た目・地図ピンの色・進捗表示を更新する
+function setVisited(addr, li, checked) {
+  if (checked) visitedAddrs[addr] = true;
+  else delete visitedAddrs[addr];
+  saveVisited();
+  li.classList.toggle('visited', checked);
+  var entry = markerByAddr[addr];
+  if (entry) entry.marker.setIcon(makeBadgeIcon(checked ? '#9ca3af' : '#2563eb', entry.label));
+  renderVisitedProgress();
+}
+
+function renderVisitedProgress() {
+  var el = document.getElementById('visitedRow');
+  var total = cachedPoints.length;
+  if (total === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  var done = cachedPoints.filter(function(p) { return visitedAddrs[p.original]; }).length;
+  el.textContent = '訪問済み ' + done + ' / ' + total + ' 件';
+  el.style.display = 'block';
 }
 
 // Googleマップのナビリンクを生成（経由地は最大9件なので超える場合は区間分割）
@@ -1217,10 +1312,47 @@ function makeQRDataURL(text) {
   return qr.createDataURL(cellSize, cellSize * 4);
 }
 
-function showQR() {
+// 入力内容（出発地・ゴール・住所リスト）をパラメータに埋め込んだ共有用URLを作る
+// QRコードと「スマホに送る」の両方で使う
+function buildShareURL() {
   var startAddr = document.getElementById('startAddr').value.trim();
   var goalSame  = document.getElementById('goalSameAsStart').checked;
   var goalAddr  = document.getElementById('goalAddr').value.trim();
+  var lines = document.getElementById('addrInput').value
+    .split('\n').filter(function(l) { return l.trim(); });
+
+  var params = new URLSearchParams();
+  if (startAddr) params.set('s', startAddr);
+  params.set('gs', goalSame ? '1' : '0');
+  if (!goalSame && goalAddr) params.set('g', goalAddr);
+  if (lines.length) {
+    var b64 = btoa(unescape(encodeURIComponent(lines.join('|'))))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    params.set('a', b64);
+  }
+  // file://で開いているときは公開サイトのURLで共有する
+  var base = location.protocol === 'file:'
+    ? 'https://hkmail1162-coder.github.io/eigyouroot-app/'
+    : location.href.split('?')[0];
+  return base + '?' + params.toString();
+}
+
+// スマホに送る: 共有シート（LINE・メール等）でURLを送信。非対応ブラウザはコピーにフォールバック
+function shareRoute() {
+  var url = buildShareURL();
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var title = now.getFullYear() + '/' + pad(now.getMonth()+1) + '/' + pad(now.getDate()) + ' 営業ルート';
+  if (navigator.share) {
+    navigator.share({ title: title, url: url }).catch(function() {});
+  } else {
+    copyText(url).then(function() {
+      alert('このブラウザは共有機能に対応していないため、URLをコピーしました。\nLINEやメールに貼り付けてスマホに送ってください。');
+    });
+  }
+}
+
+function showQR() {
   var lines = document.getElementById('addrInput').value
     .split('\n').filter(function(l) { return l.trim(); });
 
@@ -1228,16 +1360,7 @@ function showQR() {
 
   if (location.protocol !== 'file:') {
     // HTTP経由: base64圧縮してURLに埋め込む
-    var params = new URLSearchParams();
-    if (startAddr) params.set('s', startAddr);
-    params.set('gs', goalSame ? '1' : '0');
-    if (!goalSame && goalAddr) params.set('g', goalAddr);
-    if (lines.length) {
-      var b64 = btoa(unescape(encodeURIComponent(lines.join('|'))))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-      params.set('a', b64);
-    }
-    qrData = location.href.split('?')[0] + '?' + params.toString();
+    qrData = buildShareURL();
     titleText = 'スマホで開く';
     noteText = 'スキャンで住所・設定が自動入力されます<br>訪問先 ' + lines.length + '件';
   } else {
