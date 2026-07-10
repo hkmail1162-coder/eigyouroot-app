@@ -570,8 +570,8 @@ function renderPrintMap(routeWithGoal, startPoint, goalPoint, width, height) {
     var originX = (tl.x + br.x) / 2 - width / 2;
     var originY = (tl.y + br.y) / 2 - height / 2;
 
-    // 印刷で文字がにじまないよう、キャンバスは2倍解像度で描く
-    // （レイアウト計算は等倍のまま、描画だけ2倍に拡大する）
+    // キャンバスは2倍解像度で描く（ルート線・番号ピン・出典表記が印刷で鮮明になる。
+    // レイアウト計算は等倍のまま、描画だけ2倍に拡大する）
     var canvas = document.createElement('canvas');
     canvas.width = width * 2;
     canvas.height = height * 2;
@@ -580,11 +580,10 @@ function renderPrintMap(routeWithGoal, startPoint, goalPoint, width, height) {
     ctx.fillStyle = '#e5e7eb';
     ctx.fillRect(0, 0, width, height);
 
-    // 高解像度（@2x）タイル: 日本語ラベルが濃いosm.jpを優先し、CARTO→OSM標準の順で代替
+    // 画面の地図と同じOSM標準スタイルのタイルを使う
+    // （@2x配信のosm.jp・CARTOも試したが、見た目の好みでこちらに戻した経緯あり）
     function tileURLs(zoom, x, y) {
       return [
-        'https://tile.openstreetmap.jp/styles/osm-bright-ja/' + zoom + '/' + x + '/' + y + '@2x.png',
-        'https://basemaps.cartocdn.com/rastertiles/voyager/' + zoom + '/' + x + '/' + y + '@2x.png',
         'https://tile.openstreetmap.org/' + zoom + '/' + x + '/' + y + '.png'
       ];
     }
@@ -666,14 +665,14 @@ function renderPrintMap(routeWithGoal, startPoint, goalPoint, width, height) {
         drawPrintPin(ctx, g.x, g.y, '#dc2626', 'G');
       }
 
-      // 出典表記（OpenStreetMap・CARTOの利用規約上必須）
+      // 出典表記（OpenStreetMapの利用規約上必須）
       ctx.font = '13px sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.fillRect(width - 300, height - 24, 300, 24);
+      ctx.fillRect(width - 230, height - 24, 230, 24);
       ctx.fillStyle = '#333';
-      ctx.fillText('© OpenStreetMap contributors © CARTO', width - 8, height - 6);
+      ctx.fillText('© OpenStreetMap contributors', width - 8, height - 6);
 
       try {
         resolve(canvas.toDataURL('image/jpeg', 0.9));
@@ -728,7 +727,7 @@ function buildPrintHTML(routeWithGoal, startPoint, goalPoint, mapUrl) {
     + 'tr.visited .addr { color: #9ca3af; text-decoration: line-through; }'
     + '.info { color: #555; font-size: 9.5px; margin-left: 8px; }'
     + '.dist { color: #666; white-space: nowrap; text-align: right; width: 80px; font-size: 10px; }'
-    + '.totals { margin-top: 8px; border: 1px solid #bbb; border-radius: 4px; padding: 6px 10px; font-weight: 600; line-height: 1.6; }'
+    + '.totals { margin-top: 8px; border: 1px solid #bbb; border-radius: 4px; padding: 6px 10px; line-height: 1.6; }'
     + '.map-page { page-break-before: always; break-before: page; }'
     + '.map-page img { width: 100%; }'
     + '.map-fail { padding: 20px; color: #b91c1c; }'
