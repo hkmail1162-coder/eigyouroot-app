@@ -570,37 +570,69 @@ function renderPrintMap(routeWithGoal, startPoint, goalPoint, width, height) {
     var originX = (tl.x + br.x) / 2 - width / 2;
     var originY = (tl.y + br.y) / 2 - height / 2;
 
+    // 印刷で文字がにじまないよう、キャンバスは2倍解像度で描く
+    // （レイアウト計算は等倍のまま、描画だけ2倍に拡大する）
     var canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = width * 2;
+    canvas.height = height * 2;
     var ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
     ctx.fillStyle = '#e5e7eb';
     ctx.fillRect(0, 0, width, height);
 
-    // 必要なタイルを並列で読み込んで敷き詰める（失敗タイルはスキップ）
+    // 高解像度（@2x）タイル: 日本語ラベルが濃いosm.jpを優先し、CARTO→OSM標準の順で代替
+    function tileURLs(zoom, x, y) {
+      return [
+        'https://tile.openstreetmap.jp/styles/osm-bright-ja/' + zoom + '/' + x + '/' + y + '@2x.png',
+        'https://basemaps.cartocdn.com/rastertiles/voyager/' + zoom + '/' + x + '/' + y + '@2x.png',
+        'https://tile.openstreetmap.org/' + zoom + '/' + x + '/' + y + '.png'
+      ];
+    }
+
+    // 候補URLを順に試してタイル1枚を描く（全滅したらスキップ）
+    function drawTile(urls, dx, dy, done) {
+      var i = 0;
+      (function tryNext() {
+        if (i >= urls.length) { done(); return; }
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        var timer = setTimeout(function() { img.src = ''; i++; tryNext(); }, 8000);
+        img.onload = function() {
+          clearTimeout(timer);
+          ctx.drawImage(img, dx, dy, 256, 256);
+          done();
+        };
+        img.onerror = function() { clearTimeout(timer); i++; tryNext(); };
+        img.src = urls[i];
+      })();
+    }
+
+    // 必要なタイルの一覧を作り、同時6件までに絞って読み込む
+    // （一斉リクエストするとタイルサーバー側で失敗が増え、代替スタイルとのツギハギになるため）
     var maxTile = Math.pow(2, zoom);
-    var jobs = [];
+    var tiles = [];
     for (var tx = Math.floor(originX / 256); tx <= Math.floor((originX + width) / 256); tx++) {
       for (var ty = Math.floor(originY / 256); ty <= Math.floor((originY + height) / 256); ty++) {
         if (ty < 0 || ty >= maxTile) continue;
-        (function(tx, ty) {
-          jobs.push(new Promise(function(done) {
-            var img = new Image();
-            img.crossOrigin = 'anonymous';
-            var timer = setTimeout(function() { img.src = ''; done(); }, 8000);
-            img.onload = function() {
-              clearTimeout(timer);
-              ctx.drawImage(img, Math.round(tx * 256 - originX), Math.round(ty * 256 - originY));
-              done();
-            };
-            img.onerror = function() { clearTimeout(timer); done(); };
-            img.src = 'https://tile.openstreetmap.org/' + zoom + '/' + ((tx % maxTile + maxTile) % maxTile) + '/' + ty + '.png';
-          }));
-        })(tx, ty);
+        tiles.push({ tx: tx, ty: ty });
       }
     }
+    var nextTile = 0;
+    function tileWorker() {
+      return new Promise(function(finish) {
+        (function next() {
+          if (nextTile >= tiles.length) { finish(); return; }
+          var t = tiles[nextTile++];
+          drawTile(
+            tileURLs(zoom, (t.tx % maxTile + maxTile) % maxTile, t.ty),
+            Math.round(t.tx * 256 - originX), Math.round(t.ty * 256 - originY), next);
+        })();
+      });
+    }
+    var workers = [];
+    for (var w = 0; w < Math.min(6, tiles.length); w++) workers.push(tileWorker());
 
-    Promise.all(jobs).then(function() {
+    Promise.all(workers).then(function() {
       var toXY = function(p) {
         var w = worldPx(p.lat, p.lng, zoom);
         return { x: w.x - originX, y: w.y - originY };
@@ -634,14 +666,14 @@ function renderPrintMap(routeWithGoal, startPoint, goalPoint, width, height) {
         drawPrintPin(ctx, g.x, g.y, '#dc2626', 'G');
       }
 
-      // 出典表記（OpenStreetMapの利用規約上必須）
+      // 出典表記（OpenStreetMap・CARTOの利用規約上必須）
       ctx.font = '13px sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.fillRect(width - 230, height - 24, 230, 24);
+      ctx.fillRect(width - 300, height - 24, 300, 24);
       ctx.fillStyle = '#333';
-      ctx.fillText('© OpenStreetMap contributors', width - 8, height - 6);
+      ctx.fillText('© OpenStreetMap contributors © CARTO', width - 8, height - 6);
 
       try {
         resolve(canvas.toDataURL('image/jpeg', 0.9));
